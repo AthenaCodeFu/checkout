@@ -33,12 +33,21 @@ sub ReadPrices {
 	# read each item
 	while (my $line = <$filehandle>) {
 		chomp $line;
-		my ($code, $price) = split /\t/, $line;
+		my ($code, $price, $special) = split /\t/, $line;
 
 		$code =~ s/^#(\d+)$/$1/ or croak "couldn't parse item code '$code' in line '$line'";
 		$price =~ s/^\$(\d+\.\d{2})\/ea$/$1/ or croak "couldn't parse item price '$price' in line '$line'";
+		if ($special =~ /^\$(\d+\.\d{2})\/ea for (\d+)/) {
+			$special = {
+				PRICE => $1,
+				AMOUNT => $2,
+			};
+		}
 
-		$self->{ITEMS}{$code} = {PRICE => $price};
+		$self->{ITEMS}{$code} = {
+			PRICE => $price,
+			SPECIAL => $special,
+		};
 	}
 
 	close $filehandle;
@@ -49,6 +58,8 @@ sub ReadPrices {
 sub Scan {
 	my ($self, $args) = @_;
 	AssertFields($args, ['CODE']);
+	$self->{BASKET}{$args->{CODE}}++;
+
 	my $price = $self->{ITEMS}{$args->{CODE}}{PRICE} or croak "unknown item code $args->{CODE}";
 	$self->{TOTAL} += $price;
 	return;
@@ -57,7 +68,18 @@ sub Scan {
 # Returns the total price of all scanned items.
 sub Total {
 	my ($self) = @_;
-	return sprintf '%.2f', $self->{TOTAL};
+
+	my $total = 0;
+
+	while (my ($code, $amount) = each %{$self->{BASKET}}) {
+		my $item = $self->{ITEMS}{$code};
+		my $price = $item->{PRICE};
+		if ($item->{SPECIAL} && $item->{SPECIAL}{AMOUNT} <= $amount) {
+			$price = $item->{SPECIAL}{PRICE};
+		}
+		$total += ($amount * $price);
+	}
+	return sprintf '%.2f', $total;
 }
 
 1;
